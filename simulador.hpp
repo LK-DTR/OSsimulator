@@ -1,4 +1,5 @@
 #pragma once
+#include "core/simulacao.hpp"
 #include <QDebug>
 #include <QFile>
 #include <QMap>
@@ -6,12 +7,24 @@
 #include <QString>
 #include <QStringList>
 #include <QTextStream>
+#include <QVariantList>
+#include <QVariantMap>
 #include <QVector>
 
 class Simulador : public QObject {
   Q_OBJECT
+  Q_PROPERTY(QString relatorio READ relatorio NOTIFY resultadoPronto)
+  Q_PROPERTY(QVariantList gantt READ gantt NOTIFY resultadoPronto)
 public:
   explicit Simulador(QObject *parent = nullptr) : QObject(parent) {}
+
+  QString relatorio() const { return m_relatorio; }
+  QVariantList gantt() const { return m_gantt; }
+
+signals:
+  void resultadoPronto();
+
+public:
 
   struct Processo {
     int pid = 0;
@@ -54,6 +67,19 @@ public:
       x.remove('_');
       x.remove('-');
       x.remove('.');
+      // Remove acentos comuns para casar cabeçalhos como "memória".
+      x.replace(QChar(0x00E1), QChar('a')); // á
+      x.replace(QChar(0x00E3), QChar('a')); // ã
+      x.replace(QChar(0x00E2), QChar('a')); // â
+      x.replace(QChar(0x00E0), QChar('a')); // à
+      x.replace(QChar(0x00E9), QChar('e')); // é
+      x.replace(QChar(0x00EA), QChar('e')); // ê
+      x.replace(QChar(0x00ED), QChar('i')); // í
+      x.replace(QChar(0x00F3), QChar('o')); // ó
+      x.replace(QChar(0x00F5), QChar('o')); // õ
+      x.replace(QChar(0x00F4), QChar('o')); // ô
+      x.replace(QChar(0x00FA), QChar('u')); // ú
+      x.replace(QChar(0x00E7), QChar('c')); // ç
       return x;
     };
 
@@ -142,23 +168,49 @@ public:
       }
       startRow = 1;
     } else {
-      // default mapping if there is no header
-      QStringList defaults = {"pid",        "chegada", "burst",
-                              "prioridade", "memoria", "paginas"};
+      // Sem cabeçalho: o mapeamento depende do número de colunas. O formato do
+      // enunciado tem 4 colunas (chegada, burst, prioridade, memória) e não
+      // inclui PID; nesse caso o PID é atribuído sequencialmente.
+      QStringList defaults;
+      int ncols = firstRow.size();
+      if (ncols >= 6)
+        defaults = {"pid",        "chegada", "burst",
+                    "prioridade", "memoria", "paginas"};
+      else if (ncols == 5)
+        defaults = {"pid", "chegada", "burst", "prioridade", "memoria"};
+      else if (ncols == 4)
+        defaults = {"chegada", "burst", "prioridade", "memoria"};
+      else if (ncols == 3)
+        defaults = {"chegada", "burst", "prioridade"};
+      else
+        defaults = {"chegada", "burst"};
       for (int i = 0; i < defaults.size(); ++i) {
         colIndex[defaults[i]] = i;
       }
       startRow = 0;
     }
 
-    auto getCol = [&](const QStringList &candidates,
+    // Busca uma coluna: primeiro por nome exato; depois, para cabeçalhos
+    // compostos (ex.: "Tempo de Chegada"), por substring usando palavras-chave
+    // específicas e não ambíguas.
+    auto getCol = [&](const QStringList &exatos, const QStringList &subs,
                       const QStringList &cols) -> QString {
-      for (const QString &cand : candidates) {
+      for (const QString &cand : exatos) {
         QString k = normalizeName(cand);
         if (colIndex.contains(k)) {
           int idx = colIndex[k];
           if (idx >= 0 && idx < cols.size())
             return cols[idx];
+        }
+      }
+      for (const QString &cand : subs) {
+        QString k = normalizeName(cand);
+        for (auto it = colIndex.constBegin(); it != colIndex.constEnd(); ++it) {
+          if (it.key().contains(k)) {
+            int idx = it.value();
+            if (idx >= 0 && idx < cols.size())
+              return cols[idx];
+          }
         }
       }
       return QString();
@@ -171,49 +223,41 @@ public:
       p.raw = cols.join(",");
 
       QString val;
-      val = getCol(QStringList{"pid", "id", "nome"}, cols);
-      if (val.isEmpty() && cols.size() > 0)
-        val = cols[0];
       bool ok;
+      // PID: usa a coluna informada; se ausente (ex.: formato do enunciado),
+      // atribui sequencialmente. Não há fallback posicional para evitar
+      // confundir o PID com a coluna de chegada.
+      val = getCol(QStringList{"pid", "id", "nome"}, QStringList{"pid"}, cols);
       p.pid = val.toInt(&ok);
       if (!ok)
         p.pid = processos.size() + 1;
 
-      val = getCol(
-          QStringList{"chegada", "arrival", "tempo_chegada", "tchegada"}, cols);
-      if (val.isEmpty() && cols.size() > 1)
-        val = cols[1];
+      val = getCol(QStringList{"chegada", "arrival"},
+                   QStringList{"chegada", "arrival"}, cols);
       p.chegada = val.toInt(&ok);
       if (!ok)
         p.chegada = 0;
 
-      val = getCol(QStringList{"burst", "tempo", "rafaga", "cpu", "bursttime"},
-                   cols);
-      if (val.isEmpty() && cols.size() > 2)
-        val = cols[2];
+      val = getCol(QStringList{"burst", "rafaga", "cpu"},
+                   QStringList{"execucao", "burst", "rafaga", "surto"}, cols);
       p.burst = val.toInt(&ok);
       if (!ok)
         p.burst = 1;
 
-      val = getCol(QStringList{"prioridade", "priority", "prio"}, cols);
-      if (val.isEmpty() && cols.size() > 3)
-        val = cols[3];
+      val = getCol(QStringList{"prioridade", "priority", "prio"},
+                   QStringList{"prioridade", "priority"}, cols);
       p.prioridade = val.toInt(&ok);
       if (!ok)
         p.prioridade = 0;
 
-      val = getCol(
-          QStringList{"memoria", "memory", "mem", "tamanho", "size", "memreq"},
-          cols);
-      if (val.isEmpty() && cols.size() > 4)
-        val = cols[4];
+      val = getCol(QStringList{"memoria", "memory", "mem"},
+                   QStringList{"memoria", "memory", "necessaria"}, cols);
       p.memoria = val.toInt(&ok);
       if (!ok)
         p.memoria = 0;
 
-      val = getCol(QStringList{"paginas", "pages"}, cols);
-      if (val.isEmpty() && cols.size() > 5)
-        val = cols[5];
+      val = getCol(QStringList{"paginas", "pages"},
+                   QStringList{"pagina", "pages"}, cols);
       if (!val.isEmpty()) {
         QString s = val;
         s.replace(';', ',');
@@ -245,16 +289,111 @@ public:
     }
 
     qDebug() << "Processos carregados:" << processos.size();
-    for (const Processo &p : processos) {
-      QStringList pagStr;
-      for (int pg : p.paginas)
-        pagStr.append(QString::number(pg));
-      qDebug() << "PID:" << p.pid << "| chegada:" << p.chegada
-               << "| burst:" << p.burst << "| prioridade:" << p.prioridade
-               << "| memoria:" << p.memoria << "| paginas:"
-               << (pagStr.isEmpty() ? QString("[]") : pagStr.join(","));
+    if (processos.isEmpty()) {
+      qDebug() << "Nenhum processo válido encontrado.";
+      return;
     }
 
-    // TODO: implementar a lógica de escalonamento e gerenciamento de memória
+    // Converte os processos lidos para as estruturas do núcleo de simulação.
+    std::vector<core::Proc> entrada;
+    entrada.reserve(processos.size());
+    for (const Processo &p : processos) {
+      core::Proc cp;
+      cp.pid = p.pid;
+      cp.chegada = p.chegada;
+      cp.burst = p.burst;
+      cp.prioridade = p.prioridade;
+      cp.memoria = p.memoria;
+      cp.paginas = std::vector<int>(p.paginas.begin(), p.paginas.end());
+      entrada.push_back(cp);
+    }
+
+    core::Sched sched = static_cast<core::Sched>(escalonamento);
+    core::Repl repl = static_cast<core::Repl>(politicaMemoria);
+    core::Result res =
+        core::simular(entrada, sched, quantum, repl, memFisica, memVirtual);
+
+    construirResultado(res, escalonamento, repl, memFisica, memVirtual,
+                       quantum);
+    emit resultadoPronto();
+  }
+
+private:
+  QString m_relatorio;
+  QVariantList m_gantt;
+
+  // Monta o relatório textual e o modelo da linha do tempo para a interface.
+  void construirResultado(const core::Result &res, int escalonamento,
+                          core::Repl repl, int memFisica, int memVirtual,
+                          int quantum) {
+    static const char *nomesSched[] = {"Round-Robin", "SJF Preemptivo",
+                                       "Prioridade Preemptiva"};
+    static const char *nomesRepl[] = {"FIFO", "LRU", "Ótimo"};
+
+    m_gantt.clear();
+    for (const core::Slice &s : res.gantt) {
+      QVariantMap m;
+      m["pid"] = s.pid;
+      m["inicio"] = s.inicio;
+      m["fim"] = s.fim;
+      m["duracao"] = s.fim - s.inicio;
+      m_gantt.append(m);
+    }
+
+    QString r;
+    r += "=== CONFIGURAÇÃO ===\n";
+    r += QString("Escalonamento: %1").arg(nomesSched[escalonamento]);
+    if (escalonamento == 0)
+      r += QString(" (quantum = %1)").arg(quantum < 1 ? 1 : quantum);
+    r += "\n";
+    r += QString("Memória física: %1 MB | virtual: %2 MB | página: %3 MB\n")
+             .arg(memFisica)
+             .arg(memVirtual)
+             .arg(core::PAGE_SIZE_MB);
+    r += QString("Frames físicos: %1 | Frames virtuais: %2 | Substituição: %3\n")
+             .arg(res.numFrames)
+             .arg(res.numFramesVirtual)
+             .arg(nomesRepl[static_cast<int>(repl)]);
+    r += QString("Páginas distintas exigidas: %1\n")
+             .arg(res.paginasDistintas);
+    if (res.estouroVirtual)
+      r += "ATENÇÃO: a demanda de páginas excede a memória virtual "
+           "disponível.\n";
+    r += "\n";
+
+    r += "=== MÉTRICAS POR PROCESSO ===\n";
+    r += "PID  Chegada  Burst  1aExec  Conclusão  Resposta  Espera\n";
+    for (const core::ProcMetrics &m : res.metrics) {
+      r += QString("%1%2%3%4%5%6%7\n")
+               .arg(m.pid, -5)
+               .arg(m.chegada, -9)
+               .arg(m.burst, -7)
+               .arg(m.primeiraExec, -8)
+               .arg(m.conclusao, -11)
+               .arg(m.resposta, -10)
+               .arg(m.espera, -6);
+    }
+
+    r += "\n=== RESULTADOS ===\n";
+    r += QString("Tempo médio de resposta: %1\n")
+             .arg(res.tempoMedioResposta, 0, 'f', 2);
+    r += QString("Tempo médio de espera:   %1\n")
+             .arg(res.tempoMedioEspera, 0, 'f', 2);
+    r += QString("Total de referências de página: %1\n")
+             .arg(res.totalReferencias);
+    r += QString("Total de Page Faults: %1\n").arg(res.pageFaults);
+
+    r += "\n=== TABELA DE PÁGINAS (estado final dos frames) ===\n";
+    for (int i = 0; i < res.numFrames; ++i) {
+      r += QString("Frame %1: ").arg(i, -3);
+      if (i < static_cast<int>(res.tabelaPaginas.size()))
+        r += QString("P%1 página %2\n")
+                 .arg(res.tabelaPaginas[i].pid)
+                 .arg(res.tabelaPaginas[i].pagina);
+      else
+        r += "livre\n";
+    }
+
+    m_relatorio = r;
   }
 };
