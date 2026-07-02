@@ -1,0 +1,26 @@
+=== VALIDAÇÃO DOS TESTES ===
+
+[PASS]  RR q=2 (enunciado): resposta 0.67 / espera 4.33
+[PASS]  RR q=2 (enunciado): 1a fatia do Gantt = P1 [0,2)
+[PASS]  SJF-P (enunciado): conclusoes 5, 8, 15
+[PASS]  SJF-P (enunciado): espera media 2.33
+[PASS]  Prioridade-P (enunciado): P3 conclui em 12
+[PASS]  Memoria 3 frames FIFO (Belady): 9 page faults
+[PASS]  Memoria 3 frames LRU (Belady): 10 page faults
+[PASS]  Memoria 3 frames Otimo (Belady): 7 page faults
+[PASS]  Memoria virtual pequena (2 frames): sinaliza estouro
+[PASS]  Memoria virtual ampla: sem estouro
+[PASS]  SJF-P (9,4,8,5): conclusoes 18, 5, 26, 10
+[PASS]  SJF-P (9,4,8,5): resposta 4.50 / espera 6.75
+[PASS]  RR q=2 (8,5,6,7): espera media 5.75
+[PASS]  RR q=3 (8,5,6,7): espera media 5.50
+[PASS]  Memoria 3 frames FIFO (classica): 15 page faults
+[PASS]  Memoria 3 frames LRU (classica): 12 page faults
+[PASS]  Memoria 3 frames Otimo (classica): 9 page faults
+[PASS]  Entrada vazia: detecta erro
+[PASS]  So comentarios/branco: detecta erro
+[PASS]  Burst<=0: descarta linha invalida, mantem a valida
+[PASS]  Valores nao numericos: usa padrao (chegada 0, burst 1)
+[PASS]  Todos com burst<=0: nenhum processo valido
+
+TODOS OS TESTES PASSARAM (0 falha(s))

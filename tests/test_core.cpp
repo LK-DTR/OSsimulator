@@ -53,6 +53,39 @@ int main() {
   check(!simular(ps, Sched::SJF_P, 2, Repl::FIFO, 1024, 4096).estouroVirtual,
         "Memoria virtual ampla nao sinaliza estouro");
 
+  // --- Cenarios adicionais de arguicao (valores validados a mao) ---
+  // SJF-P: A(0,9) B(1,4) C(2,8) D(3,5)  [A=P1 B=P2 C=P3 D=P4]
+  std::vector<Proc> sjf2 = {{1, 0, 9, 1, 100, {}},
+                            {2, 1, 4, 1, 100, {}},
+                            {3, 2, 8, 1, 100, {}},
+                            {4, 3, 5, 1, 100, {}}};
+  Result rs = simular(sjf2, Sched::SJF_P, 2, Repl::FIFO, 1024, 4096);
+  check(rs.metrics[0].conclusao == 18 && rs.metrics[1].conclusao == 5 &&
+            rs.metrics[2].conclusao == 26 && rs.metrics[3].conclusao == 10,
+        "SJF-P (9,4,8,5): conclusoes 18, 5, 26, 10");
+  check(quase(rs.tempoMedioResposta, 4.50) && quase(rs.tempoMedioEspera, 6.75),
+        "SJF-P (9,4,8,5): resposta 4.50 / espera 6.75");
+
+  // Round-Robin: A(0,8) B(4,5) C(9,6) D(14,7)
+  std::vector<Proc> rr2 = {{1, 0, 8, 1, 100, {}},
+                           {2, 4, 5, 1, 100, {}},
+                           {3, 9, 6, 1, 100, {}},
+                           {4, 14, 7, 1, 100, {}}};
+  check(quase(simular(rr2, Sched::RR, 2, Repl::FIFO, 1024, 4096).tempoMedioEspera, 5.75),
+        "RR q=2 (8,5,6,7): espera media 5.75");
+  check(quase(simular(rr2, Sched::RR, 3, Repl::FIFO, 1024, 4096).tempoMedioEspera, 5.50),
+        "RR q=3 (8,5,6,7): espera media 5.50");
+
+  // Memoria: string classica (Silberschatz), 3 frames
+  std::vector<Proc> mem = {
+      {1, 0, 20, 1, 100, {7, 0, 1, 2, 0, 3, 0, 4, 2, 3, 0, 3, 2, 1, 2, 0, 1, 7, 0, 1}}};
+  check(simular(mem, Sched::SJF_P, 2, Repl::FIFO, 30, 4096).pageFaults == 15,
+        "Memoria 3 frames FIFO (string classica): 15 faults");
+  check(simular(mem, Sched::SJF_P, 2, Repl::LRU, 30, 4096).pageFaults == 12,
+        "Memoria 3 frames LRU (string classica): 12 faults");
+  check(simular(mem, Sched::SJF_P, 2, Repl::OPT, 30, 4096).pageFaults == 9,
+        "Memoria 3 frames Otimo (string classica): 9 faults");
+
   std::printf("\n%s (%d falha(s))\n", falhas == 0 ? "TODOS OS TESTES PASSARAM" : "HA FALHAS", falhas);
   return falhas == 0 ? 0 : 1;
 }

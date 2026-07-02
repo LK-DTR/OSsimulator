@@ -113,6 +113,13 @@ ApplicationWindow {
             }
         }
 
+        // Roda os cenários de teste do núcleo e mostra PASS/FALHA no relatório.
+        Button {
+            text: "Validar Testes"
+            Layout.fillWidth: true
+            onClicked: backend.validarTestes()
+        }
+
         // --- 5. RELATÓRIOS ---
         Label {
             text: "Linha do Tempo (Gantt)"
